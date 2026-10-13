@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:media_kit_video/media_kit_video.dart';
@@ -43,7 +44,6 @@ Widget buildFullControls(
   LiveRoomController controller,
 ) {
   var padding = MediaQuery.of(videoState.context).padding;
-  GlobalKey volumeButtonkey = GlobalKey();
   return DragToMoveArea(
     child: Stack(
       children: [
@@ -214,6 +214,33 @@ Widget buildFullControls(
             ),
           ),
         ),
+
+        // 右上角当前时间（桌面端，水印效果，位于顶部栏下方避免遮挡按钮）
+        Visibility(
+          visible: !Platform.isAndroid && !Platform.isIOS,
+          child: Positioned(
+            top: padding.top + 52,
+            right: padding.right + 16,
+            child: IgnorePointer(
+              child: Obx(
+                () => Text(
+                  controller.currentTime.value,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Colors.white.withAlpha(190),
+                    shadows: const [
+                      Shadow(
+                        color: Colors.black54,
+                        offset: Offset(1, 1),
+                        blurRadius: 2,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
         // 底部
         Obx(
           () => AnimatedPositioned(
@@ -298,18 +325,7 @@ Widget buildFullControls(
                   const Expanded(child: Center()),
                   Visibility(
                     visible: !Platform.isAndroid && !Platform.isIOS,
-                    child: IconButton(
-                      key: volumeButtonkey,
-                      onPressed: () {
-                        controller
-                            .showVolumeSlider(volumeButtonkey.currentContext!);
-                      },
-                      icon: const Icon(
-                        Icons.volume_down,
-                        size: 24,
-                        color: Colors.white,
-                      ),
-                    ),
+                    child: buildVolumeButton(controller),
                   ),
                   TextButton(
                     onPressed: () {
@@ -430,7 +446,6 @@ Widget buildControls(
   VideoState videoState,
   LiveRoomController controller,
 ) {
-  GlobalKey volumeButtonkey = GlobalKey();
   return Stack(
     children: [
       Container(),
@@ -477,6 +492,32 @@ Widget buildControls(
               width: double.infinity,
               height: double.infinity,
               color: Colors.transparent,
+            ),
+          ),
+        ),
+      ),
+      // 右上角当前时间（桌面端，水印效果）
+      Visibility(
+        visible: !Platform.isAndroid && !Platform.isIOS,
+        child: Positioned(
+          top: 10,
+          right: 12,
+          child: IgnorePointer(
+            child: Obx(
+              () => Text(
+                controller.currentTime.value,
+                style: TextStyle(
+                  fontSize: 13,
+                  color: Colors.white.withAlpha(190),
+                  shadows: const [
+                    Shadow(
+                      color: Colors.black54,
+                      offset: Offset(1, 1),
+                      blurRadius: 2,
+                    ),
+                  ],
+                ),
+              ),
             ),
           ),
         ),
@@ -555,19 +596,7 @@ Widget buildControls(
                 const Expanded(child: Center()),
                 Visibility(
                   visible: !Platform.isAndroid && !Platform.isIOS,
-                  child: IconButton(
-                    key: volumeButtonkey,
-                    onPressed: () {
-                      controller.showVolumeSlider(
-                        volumeButtonkey.currentContext!,
-                      );
-                    },
-                    icon: const Icon(
-                      Icons.volume_down,
-                      size: 24,
-                      color: Colors.white,
-                    ),
-                  ),
+                  child: buildVolumeButton(controller),
                 ),
                 Offstage(
                   offstage: isPortrait,
@@ -1041,6 +1070,196 @@ class _PlayerSuperChatOverlayState extends State<PlayerSuperChatOverlay> {
             ),
           ),
       ],
+    );
+  }
+}
+
+/// 桌面端音量按钮：点击静音/取消静音，hover 时在按钮上方显示竖向音量滑块
+Widget buildVolumeButton(LiveRoomController controller) {
+  return _VolumeButton(controller: controller);
+}
+
+class _VolumeButton extends StatefulWidget {
+  final LiveRoomController controller;
+  const _VolumeButton({required this.controller, Key? key}) : super(key: key);
+
+  @override
+  State<_VolumeButton> createState() => _VolumeButtonState();
+}
+
+class _VolumeButtonState extends State<_VolumeButton> {
+  final GlobalKey _buttonKey = GlobalKey();
+  OverlayEntry? _sliderOverlay;
+  Timer? _dismissTimer;
+  bool _popupHovering = false;
+
+  /// 滑块悬浮窗尺寸
+  static const double popupWidth = 52;
+  static const double popupHeight = 180;
+
+  @override
+  void dispose() {
+    _dismissTimer?.cancel();
+    _removeSlider();
+    super.dispose();
+  }
+
+  void _removeSlider() {
+    _sliderOverlay?.remove();
+    _sliderOverlay = null;
+  }
+
+  void _showSlider() {
+    if (_sliderOverlay != null) {
+      return;
+    }
+    final buttonContext = _buttonKey.currentContext;
+    if (buttonContext == null) {
+      return;
+    }
+    final renderBox = buttonContext.findRenderObject() as RenderBox?;
+    if (renderBox == null) {
+      return;
+    }
+    final buttonTopLeft = renderBox.localToGlobal(Offset.zero);
+    final buttonSize = renderBox.size;
+
+    final overlay = Overlay.of(buttonContext, rootOverlay: true);
+    final overlayRenderBox = overlay.context.findRenderObject() as RenderBox?;
+    final overlayWidth =
+        overlayRenderBox?.size.width ?? MediaQuery.of(buttonContext).size.width;
+
+    // 水平居中于按钮，竖直方向悬浮在按钮正上方
+    double left = buttonTopLeft.dx + buttonSize.width / 2 - popupWidth / 2;
+    double top = buttonTopLeft.dy - popupHeight - 8;
+    // 边界保护：不超出屏幕左右边缘
+    if (left < 4.0) {
+      left = 4.0;
+    } else if (overlayWidth > popupWidth + 8 &&
+        left > overlayWidth - popupWidth - 4) {
+      left = overlayWidth - popupWidth - 4;
+    }
+    // 上方空间不足时改放到按钮下方
+    if (top < 4.0) {
+      top = buttonTopLeft.dy + buttonSize.height + 8;
+    }
+
+    _sliderOverlay = OverlayEntry(
+      builder: (context) => Positioned(
+        left: left,
+        top: top,
+        child: _VolumeSliderPopup(
+          controller: widget.controller,
+          width: popupWidth,
+          height: popupHeight,
+          onHoverChange: (hovering) {
+            _popupHovering = hovering;
+            if (hovering) {
+              _dismissTimer?.cancel();
+            } else {
+              _scheduleDismiss();
+            }
+          },
+        ),
+      ),
+    );
+    overlay.insert(_sliderOverlay!);
+  }
+
+  void _scheduleDismiss() {
+    _dismissTimer?.cancel();
+    _dismissTimer = Timer(const Duration(milliseconds: 400), () {
+      if (!_popupHovering) {
+        _removeSlider();
+      }
+    });
+  }
+
+  void _onEnter(PointerEnterEvent event) {
+    _dismissTimer?.cancel();
+    _popupHovering = false;
+    widget.controller.showControls();
+    _showSlider();
+  }
+
+  void _onExit(PointerExitEvent event) {
+    _scheduleDismiss();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      onEnter: _onEnter,
+      onExit: _onExit,
+      child: IconButton(
+        key: _buttonKey,
+        onPressed: () => widget.controller.toggleVolumeMute(),
+        icon: Obx(
+          () => Icon(
+            AppSettingsController.instance.playerVolume.value > 0
+                ? Icons.volume_down
+                : Icons.volume_mute,
+            size: 24,
+            color: Colors.white,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 竖向音量滑块悬浮窗（hover 显示）
+class _VolumeSliderPopup extends StatelessWidget {
+  final LiveRoomController controller;
+  final double width;
+  final double height;
+  final ValueChanged<bool> onHoverChange;
+  const _VolumeSliderPopup({
+    required this.controller,
+    required this.width,
+    required this.height,
+    required this.onHoverChange,
+    Key? key,
+  }) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      onEnter: (_) => onHoverChange(true),
+      onExit: (_) => onHoverChange(false),
+      onHover: (_) => controller.showControls(),
+      child: Material(
+        type: MaterialType.transparency,
+        child: Container(
+          width: width,
+          height: height,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: Theme.of(context).cardColor.withAlpha(230),
+            borderRadius: AppStyle.radius12,
+          ),
+          child: Obx(
+            () => SizedBox(
+              // RotatedBox 旋转后宽高互换，这里直接给「旋转后」的视觉尺寸
+              width: width - 16,
+              height: height - 20,
+              child: RotatedBox(
+                quarterTurns: 3, // 旋转后上=最大值，下=0
+                child: Slider(
+                  min: 0,
+                  max: 100,
+                  value: AppSettingsController.instance.playerVolume.value,
+                  onChanged: (newValue) {
+                    controller.player.setVolume(newValue);
+                    AppSettingsController.instance.setPlayerVolume(newValue);
+                    controller.showControls();
+                  },
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

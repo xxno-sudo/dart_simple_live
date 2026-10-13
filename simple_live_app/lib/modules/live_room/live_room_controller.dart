@@ -107,6 +107,13 @@ class LiveRoomController extends PlayerController with WidgetsBindingObserver {
   var liveDuration = "00:00:00".obs;
   Timer? _liveDurationTimer;
 
+  /// 当前时间（播放器右上角水印显示）
+  var currentTime = "".obs;
+  Timer? _currentTimeTimer;
+
+  /// 静音前的音量，取消静音时恢复用
+  double? _volumeBeforeMute;
+
   @override
   void onInit() {
     WidgetsBinding.instance.addObserver(this);
@@ -114,6 +121,7 @@ class LiveRoomController extends PlayerController with WidgetsBindingObserver {
       FollowService.instance.loadData();
     }
     initAutoExit();
+    startCurrentTimeTimer();
     showDanmakuState.value = AppSettingsController.instance.danmuEnable.value;
     followed.value = DBService.instance.getFollowExist("${site.id}_$roomId");
     loadData();
@@ -620,36 +628,33 @@ class LiveRoomController extends PlayerController with WidgetsBindingObserver {
     );
   }
 
-  void showVolumeSlider(BuildContext targetContext) {
-    SmartDialog.showAttach(
-      targetContext: targetContext,
-      alignment: Alignment.topCenter,
-      displayTime: const Duration(seconds: 3),
-      maskColor: const Color(0x00000000),
-      builder: (context) {
-        return Container(
-          decoration: BoxDecoration(
-            borderRadius: AppStyle.radius12,
-            color: Theme.of(context).cardColor,
-          ),
-          padding: AppStyle.edgeInsetsA4,
-          child: Obx(
-            () => SizedBox(
-              width: 200,
-              child: Slider(
-                min: 0,
-                max: 100,
-                value: AppSettingsController.instance.playerVolume.value,
-                onChanged: (newValue) {
-                  player.setVolume(newValue);
-                  AppSettingsController.instance.setPlayerVolume(newValue);
-                },
-              ),
-            ),
-          ),
-        );
-      },
+  /// 静音 / 取消静音（mac 端音量按钮点击）
+  void toggleVolumeMute() {
+    var current = AppSettingsController.instance.playerVolume.value;
+    if (current > 0) {
+      _volumeBeforeMute = current;
+      player.setVolume(0.0);
+      AppSettingsController.instance.setPlayerVolume(0.0);
+    } else {
+      var restore = _volumeBeforeMute ?? 100.0;
+      player.setVolume(restore);
+      AppSettingsController.instance.setPlayerVolume(restore);
+    }
+  }
+
+  /// 启动当前时间定时器（每秒刷新，供播放器右上角水印显示）
+  void startCurrentTimeTimer() {
+    _updateCurrentTime();
+    _currentTimeTimer = Timer.periodic(
+      const Duration(seconds: 1),
+      (_) => _updateCurrentTime(),
     );
+  }
+
+  void _updateCurrentTime() {
+    var now = DateTime.now();
+    currentTime.value =
+        "${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}";
   }
 
   void showQualitySheet() {
@@ -1060,6 +1065,7 @@ ${error?.stackTrace}''');
     liveDanmaku.stop();
     danmakuController = null;
     _liveDurationTimer?.cancel(); // 页面关闭时取消定时器
+    _currentTimeTimer?.cancel(); // 页面关闭时取消当前时间定时器
     super.onClose();
   }
 }
