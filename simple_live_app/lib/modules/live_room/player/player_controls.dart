@@ -226,13 +226,14 @@ Widget buildFullControls(
                 () => Text(
                   controller.currentTime.value,
                   style: TextStyle(
-                    fontSize: 13,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
                     color: Colors.white.withAlpha(190),
                     shadows: const [
                       Shadow(
                         color: Colors.black54,
                         offset: Offset(1, 1),
-                        blurRadius: 2,
+                        blurRadius: 3,
                       ),
                     ],
                   ),
@@ -507,13 +508,14 @@ Widget buildControls(
               () => Text(
                 controller.currentTime.value,
                 style: TextStyle(
-                  fontSize: 13,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
                   color: Colors.white.withAlpha(190),
                   shadows: const [
                     Shadow(
                       color: Colors.black54,
                       offset: Offset(1, 1),
-                      blurRadius: 2,
+                      blurRadius: 3,
                     ),
                   ],
                 ),
